@@ -1,0 +1,13 @@
+{
+    "mcpServers": {
+      "homeassistant": {
+        "command": "node",
+        "args": [".../homeassistant-server-mcp/build/index.js"],
+        "env": {
+          "HA_URL": "http://192.168.1.xxx:8123",
+          "HA_TOKEN": "xxxxxxxxxxxx"
+        }
+      }
+    }
+  }
+  
