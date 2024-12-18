@@ -15,13 +15,12 @@ This project is part of the AI Model Context Protocol (MCP) ecosystem. For more 
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/homeassistant-mcp.git
-cd homeassistant-mcp
+git clone https://github.com/yourusername/homeassistant-server-mcp.git
+cd homeassistant-server-mcp
 ```
 
 2. Install dependencies:
 ```bash
-cd homeassistant-server
 npm install
 ```
 
