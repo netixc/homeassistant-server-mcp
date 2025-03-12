@@ -2,6 +2,10 @@
 
 A Model Context Protocol (MCP) server for interacting with Home Assistant. This server provides tools to control and monitor your Home Assistant devices through MCP-enabled applications.
 
+<a href="https://glama.ai/mcp/servers/io8m0yc5wq">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/io8m0yc5wq/badge" alt="Home Assistant Server MCP server" />
+</a>
+
 This project is part of the AI Model Context Protocol (MCP) ecosystem. For more information and documentation about MCP tools, visit [www.aimcp.info](http://www.aimcp.info).
 
 ## Features
