@@ -101,6 +101,20 @@ class HomeAssistantServer {
           },
         },
         {
+          name: 'run_script',
+          description: 'Run a Home Assistant script',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              script_id: {
+                type: 'string',
+                description: 'The script ID to run (e.g., script.open_plex)',
+              },
+            },
+            required: ['script_id'],
+          },
+        },
+        {
           name: 'list_entities',
           description: 'List all available entities in Home Assistant',
           inputSchema: {
@@ -111,6 +125,103 @@ class HomeAssistantServer {
                 description: 'Optional domain filter (e.g., light, switch, automation)',
               },
             },
+          },
+        },
+        {
+          name: 'control_light',
+          description: 'Control a Home Assistant light with advanced features like color, brightness, and temperature',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              entity_id: {
+                type: 'string',
+                description: 'The light entity ID (e.g., light.living_room)',
+              },
+              state: {
+                type: 'string',
+                description: 'Turn the light on or off',
+                enum: ['on', 'off'],
+              },
+              brightness: {
+                type: 'number',
+                description: 'Brightness level (0-255)',
+                minimum: 0,
+                maximum: 255,
+              },
+              rgb_color: {
+                type: 'array',
+                description: 'RGB color as [red, green, blue] (0-255 each)',
+                items: {
+                  type: 'number',
+                  minimum: 0,
+                  maximum: 255,
+                },
+                minItems: 3,
+                maxItems: 3,
+              },
+              color_temp: {
+                type: 'number',
+                description: 'Color temperature in mireds (153-500)',
+                minimum: 153,
+                maximum: 500,
+              },
+            },
+            required: ['entity_id', 'state'],
+          },
+        },
+        {
+          name: 'send_remote_command',
+          description: 'Send remote control commands to remote entities (TV, Android TV, etc.)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              entity_id: {
+                type: 'string',
+                description: 'The remote entity ID (e.g., remote.tv)',
+              },
+              command: {
+                type: 'string',
+                description: 'Remote command to send. Navigation: DPAD_UP/DOWN/LEFT/RIGHT/CENTER, BUTTON_A/B/X/Y, BACK. Volume: VOLUME_UP/DOWN/MUTE. Media: MEDIA_PLAY_PAUSE/PLAY/PAUSE/NEXT/PREVIOUS/STOP/RECORD/REWIND/FAST_FORWARD. Numbers: 0-9. TV: CHANNEL_UP/DOWN, TV, PROG_RED/GREEN/YELLOW/BLUE. Function keys: F1-F12. Other: HOME, MENU, INFO, GUIDE, SETTINGS, SEARCH, POWER, etc.',
+              },
+            },
+            required: ['entity_id', 'command'],
+          },
+        },
+        {
+          name: 'launch_app',
+          description: 'Launch an app/activity on a remote device (Android TV, etc.)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              entity_id: {
+                type: 'string',
+                description: 'The remote entity ID (e.g., remote.tv)',
+              },
+              activity: {
+                type: 'string',
+                description: 'The app package name/activity to launch (e.g., com.plexapp.android)',
+              },
+            },
+            required: ['entity_id', 'activity'],
+          },
+        },
+        {
+          name: 'open_streaming_app',
+          description: 'Quick launcher for popular streaming apps on TV',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              entity_id: {
+                type: 'string',
+                description: 'The remote entity ID (e.g., remote.tv)',
+              },
+              app: {
+                type: 'string',
+                description: 'The streaming app to open',
+                enum: ['plex', 'youtube', 'netflix', 'prime', 'disney'],
+              },
+            },
+            required: ['entity_id', 'app'],
           },
         },
       ],
@@ -125,8 +236,18 @@ class HomeAssistantServer {
             return await this.toggleEntity(request.params.arguments);
           case 'trigger_automation':
             return await this.triggerAutomation(request.params.arguments);
+          case 'run_script':
+            return await this.runScript(request.params.arguments);
           case 'list_entities':
             return await this.listEntities(request.params.arguments);
+          case 'control_light':
+            return await this.controlLight(request.params.arguments);
+          case 'send_remote_command':
+            return await this.sendRemoteCommand(request.params.arguments);
+          case 'launch_app':
+            return await this.launchApp(request.params.arguments);
+          case 'open_streaming_app':
+            return await this.openStreamingApp(request.params.arguments);
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -199,6 +320,25 @@ class HomeAssistantServer {
     };
   }
 
+  private async runScript(args: any) {
+    if (!args.script_id) {
+      throw new McpError(ErrorCode.InvalidParams, 'script_id is required');
+    }
+
+    const response = await this.haClient.post('/api/services/script/turn_on', {
+      entity_id: args.script_id,
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully ran ${args.script_id}`,
+        },
+      ],
+    };
+  }
+
   private async listEntities(args: any) {
     const response = await this.haClient.get('/api/states');
     let entities = response.data;
@@ -221,6 +361,139 @@ class HomeAssistantServer {
       ],
     };
   }
+
+  private async controlLight(args: any) {
+    if (!args.entity_id || !args.state) {
+      throw new McpError(ErrorCode.InvalidParams, 'entity_id and state are required');
+    }
+
+    if (!args.entity_id.startsWith('light.')) {
+      throw new McpError(ErrorCode.InvalidParams, 'control_light can only be used with light entities (entity_id must start with "light.")');
+    }
+
+    if (args.state === 'off') {
+      const response = await this.haClient.post('/api/services/light/turn_off', {
+        entity_id: args.entity_id,
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Successfully turned off ${args.entity_id}`,
+          },
+        ],
+      };
+    } else {
+      const serviceData: any = {
+        entity_id: args.entity_id,
+      };
+
+      if (args.brightness !== undefined) {
+        serviceData.brightness = args.brightness;
+      }
+
+      if (args.rgb_color) {
+        serviceData.rgb_color = args.rgb_color;
+      }
+
+      if (args.color_temp !== undefined) {
+        serviceData.color_temp = args.color_temp;
+      }
+
+      const response = await this.haClient.post('/api/services/light/turn_on', serviceData);
+
+      const features = [];
+      if (args.brightness !== undefined) features.push(`brightness: ${args.brightness}`);
+      if (args.rgb_color) features.push(`color: RGB(${args.rgb_color.join(', ')})`);
+      if (args.color_temp !== undefined) features.push(`color_temp: ${args.color_temp} mireds`);
+
+      const featuresText = features.length > 0 ? ` with ${features.join(', ')}` : '';
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Successfully turned on ${args.entity_id}${featuresText}`,
+          },
+        ],
+      };
+    }
+  }
+
+  private async sendRemoteCommand(args: any) {
+    if (!args.entity_id || !args.command) {
+      throw new McpError(ErrorCode.InvalidParams, 'entity_id and command are required');
+    }
+
+    const response = await this.haClient.post('/api/services/remote/send_command', {
+      entity_id: args.entity_id,
+      command: args.command,
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully sent ${args.command} command to ${args.entity_id}`,
+        },
+      ],
+    };
+  }
+
+  private async launchApp(args: any) {
+    if (!args.entity_id || !args.activity) {
+      throw new McpError(ErrorCode.InvalidParams, 'entity_id and activity are required');
+    }
+
+    const response = await this.haClient.post('/api/services/remote/turn_on', {
+      entity_id: args.entity_id,
+      activity: args.activity,
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully launched ${args.activity} on ${args.entity_id}`,
+        },
+      ],
+    };
+  }
+
+  private async openStreamingApp(args: any) {
+    if (!args.entity_id || !args.app) {
+      throw new McpError(ErrorCode.InvalidParams, 'entity_id and app are required');
+    }
+
+    const appMappings: { [key: string]: string } = {
+      'plex': 'com.plexapp.android',
+      'youtube': 'https://www.youtube.com',
+      'netflix': 'https://www.netflix.com/title',
+      'prime': 'https://app.primevideo.com',
+      'disney': 'https://www.disneyplus.com'
+    };
+
+    const activity = appMappings[args.app];
+    if (!activity) {
+      throw new McpError(ErrorCode.InvalidParams, `Unknown app: ${args.app}. Available apps: ${Object.keys(appMappings).join(', ')}`);
+    }
+
+    const response = await this.haClient.post('/api/services/remote/turn_on', {
+      entity_id: args.entity_id,
+      activity: activity,
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully opened ${args.app} on ${args.entity_id}`,
+        },
+      ],
+    };
+  }
+
 
   async run() {
     const transport = new StdioServerTransport();

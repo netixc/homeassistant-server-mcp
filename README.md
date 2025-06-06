@@ -10,10 +10,20 @@ This project is part of the AI Model Context Protocol (MCP) ecosystem. For more 
 
 ## Features
 
-- Get device states
-- Control device states (on/off)
-- Trigger automations
-- List available entities
+### Core Device Control
+- Get device states for any Home Assistant entity
+- Control device states (on/off) for switches, lights, etc.
+- Advanced light control with brightness, RGB colors, and color temperature
+- List available entities with optional domain filtering
+
+### Entertainment & Media Control
+- Send remote control commands to TV/Android TV devices
+- Launch apps by package name on smart devices
+- Quick streaming app launcher (Plex, YouTube, Netflix, Prime Video, Disney+)
+
+### Automation & Scripts
+- Trigger Home Assistant automations
+- Run Home Assistant scripts
 
 ## Installation
 
@@ -56,10 +66,11 @@ Replace `your-homeassistant-url` and `your-long-lived-access-token` with your Ho
 
 The server provides the following tools:
 
-### 1. Get Device State
+### Device Control Tools
 
+#### Get Device State
+Get the current state of any Home Assistant entity.
 ```typescript
-// Example usage
 use_mcp_tool({
   server_name: "homeassistant",
   tool_name: "get_state",
@@ -69,10 +80,9 @@ use_mcp_tool({
 });
 ```
 
-### 2. Toggle Device State
-
+#### Toggle Entity
+Turn any entity on or off.
 ```typescript
-// Example usage
 use_mcp_tool({
   server_name: "homeassistant",
   tool_name: "toggle_entity",
@@ -83,10 +93,80 @@ use_mcp_tool({
 });
 ```
 
-### 3. Trigger Automation
-
+#### Advanced Light Control
+Control lights with brightness, color, and color temperature.
 ```typescript
-// Example usage
+use_mcp_tool({
+  server_name: "homeassistant",
+  tool_name: "control_light",
+  arguments: {
+    entity_id: "light.living_room",
+    state: "on",
+    brightness: 200,
+    rgb_color: [255, 100, 50],
+    color_temp: 300
+  }
+});
+```
+
+#### List Entities
+List all available entities, optionally filtered by domain.
+```typescript
+use_mcp_tool({
+  server_name: "homeassistant",
+  tool_name: "list_entities",
+  arguments: {
+    domain: "light"  // optional, filters by domain
+  }
+});
+```
+
+### Entertainment & Remote Control Tools
+
+#### Send Remote Command
+Send remote control commands to TV/Android TV devices.
+```typescript
+use_mcp_tool({
+  server_name: "homeassistant",
+  tool_name: "send_remote_command",
+  arguments: {
+    entity_id: "remote.tv",
+    command: "DPAD_UP"  // Navigation, volume, media controls, etc.
+  }
+});
+```
+
+#### Launch App
+Launch specific apps on smart devices.
+```typescript
+use_mcp_tool({
+  server_name: "homeassistant",
+  tool_name: "launch_app",
+  arguments: {
+    entity_id: "remote.tv",
+    activity: "com.plexapp.android"
+  }
+});
+```
+
+#### Quick Streaming Apps
+One-click launch of popular streaming services.
+```typescript
+use_mcp_tool({
+  server_name: "homeassistant",
+  tool_name: "open_streaming_app",
+  arguments: {
+    entity_id: "remote.tv",
+    app: "netflix"  // plex, youtube, netflix, prime, disney
+  }
+});
+```
+
+### Automation Tools
+
+#### Trigger Automation
+Run Home Assistant automations.
+```typescript
 use_mcp_tool({
   server_name: "homeassistant",
   tool_name: "trigger_automation",
@@ -96,15 +176,14 @@ use_mcp_tool({
 });
 ```
 
-### 4. List Entities
-
+#### Run Script
+Execute Home Assistant scripts.
 ```typescript
-// Example usage
 use_mcp_tool({
   server_name: "homeassistant",
-  tool_name: "list_entities",
+  tool_name: "run_script",
   arguments: {
-    domain: "light"  // optional, filters by domain
+    script_id: "script.open_plex"
   }
 });
 ```
