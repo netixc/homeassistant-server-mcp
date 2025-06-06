@@ -2,12 +2,6 @@
 
 A Model Context Protocol (MCP) server for interacting with Home Assistant. This server provides tools to control and monitor your Home Assistant devices through MCP-enabled applications.
 
-<a href="https://glama.ai/mcp/servers/io8m0yc5wq">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/io8m0yc5wq/badge" alt="Home Assistant Server MCP server" />
-</a>
-
-This project is part of the AI Model Context Protocol (MCP) ecosystem. For more information and documentation about MCP tools, visit [www.aimcp.info](http://www.aimcp.info).
-
 ## Features
 
 ### Core Device Control
@@ -29,7 +23,7 @@ This project is part of the AI Model Context Protocol (MCP) ecosystem. For more 
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/homeassistant-server-mcp.git
+git clone https://github.com/netixc/homeassistant-server-mcp.git
 cd homeassistant-server-mcp
 ```
 
@@ -188,25 +182,6 @@ use_mcp_tool({
 });
 ```
 
-## Contributing
-
-Contributions are welcome! Here's how you can help:
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-Please make sure to update tests as appropriate and follow the existing code style.
-
-## Documentation
-
-For detailed documentation about MCP tools and the ecosystem:
-- Visit [www.aimcp.info](http://www.aimcp.info)
-- Check the MCP tools directory on the website
-- Read the integration guides and best practices
-
 ## License
 
 This project is licensed under the MIT License - see below for details:
@@ -243,12 +218,3 @@ To securely use this server:
 2. Keep your access tokens secure and never commit them to version control
 3. Regularly rotate your access tokens
 4. Use environment variables for sensitive information
-
-## Support
-
-If you encounter any issues or have questions, please:
-
-1. Check the existing issues in the repository
-2. Create a new issue if your problem hasn't been reported
-3. Provide as much context as possible when reporting issues
-4. Visit [www.aimcp.info](http://www.aimcp.info) for additional support resources
