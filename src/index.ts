@@ -877,7 +877,7 @@ class HomeAssistantServer {
               },
               item: {
                 type: 'string',
-                description: 'Item name for add/update/remove operations',
+                description: 'Item name for add/update/remove operations. For update/remove, this can be used to find the item if item_id is not provided.',
               },
               complete: {
                 type: 'boolean',
@@ -885,7 +885,7 @@ class HomeAssistantServer {
               },
               item_id: {
                 type: 'string',
-                description: 'Item ID for update/remove operations',
+                description: 'Item ID for update/remove operations (preferred). If not provided, the system will search by item name.',
               },
               id: {
                 type: 'string',
@@ -2856,6 +2856,27 @@ class HomeAssistantServer {
     }
   }
 
+  /**
+   * Helper function to find shopping list item by name
+   */
+  private async findShoppingListItemByName(itemName: string): Promise<any | null> {
+    try {
+      const response = await this.withRetry(() => 
+        this.haClient.get('/api/shopping_list')
+      );
+      
+      const items = response.data || [];
+      const foundItem = items.find((item: any) => 
+        item.name && item.name.toLowerCase() === itemName.toLowerCase()
+      );
+      
+      return foundItem || null;
+    } catch (error) {
+      this.log(LogLevel.ERROR, 'Failed to fetch shopping list for item lookup:', error);
+      return null;
+    }
+  }
+
   private async manageShoppingList(args: any) {
     if (!this.checkRateLimit()) {
       throw new McpError(ErrorCode.InternalError, 'Rate limit exceeded');
@@ -2921,9 +2942,20 @@ class HomeAssistantServer {
           this.log(LogLevel.DEBUG, 'Shopping list update called with args:', args);
           
           // Handle both item_id and id parameters for compatibility
-          const itemId = args.item_id || args.id;
+          let itemId = args.item_id || args.id;
+          
+          // If no ID provided, try to find item by name
+          if (!itemId && args.item) {
+            this.log(LogLevel.DEBUG, `No item_id provided, searching for item by name: ${args.item}`);
+            const foundItem = await this.findShoppingListItemByName(args.item);
+            if (foundItem) {
+              itemId = foundItem.id;
+              this.log(LogLevel.DEBUG, `Found item by name, using ID: ${itemId}`);
+            }
+          }
+          
           if (!itemId) {
-            throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for update action. Available args: ' + JSON.stringify(Object.keys(args)));
+            throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for update action, or provide item name to search. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
           const updateData: any = {};
@@ -2958,9 +2990,20 @@ class HomeAssistantServer {
           this.log(LogLevel.DEBUG, 'Shopping list remove called with args:', args);
           
           // Handle both item_id and id parameters for compatibility
-          const removeItemId = args.item_id || args.id;
+          let removeItemId = args.item_id || args.id;
+          
+          // If no ID provided, try to find item by name
+          if (!removeItemId && args.item) {
+            this.log(LogLevel.DEBUG, `No item_id provided, searching for item by name: ${args.item}`);
+            const foundItem = await this.findShoppingListItemByName(args.item);
+            if (foundItem) {
+              removeItemId = foundItem.id;
+              this.log(LogLevel.DEBUG, `Found item by name, using ID: ${removeItemId}`);
+            }
+          }
+          
           if (!removeItemId) {
-            throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for remove action. Available args: ' + JSON.stringify(Object.keys(args)));
+            throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for remove action, or provide item name to search. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
           await this.withRetry(() => 
