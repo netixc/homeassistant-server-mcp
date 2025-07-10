@@ -2867,12 +2867,14 @@ class HomeAssistantServer {
       
       try {
         // First try the todo service approach
+        this.log(LogLevel.DEBUG, 'Trying todo.get_items service for item lookup');
         const response = await this.withRetry(() => 
           this.haClient.post('/api/services/todo/get_items', {
             entity_id: 'todo.shopping_list',
           })
         );
         items = response.data || [];
+        this.log(LogLevel.DEBUG, `Found ${items.length} items in shopping list`, items);
         foundItem = items.find((item: any) => 
           item.summary && item.summary.toLowerCase() === itemName.toLowerCase()
         );
@@ -2880,6 +2882,7 @@ class HomeAssistantServer {
         // Map uid to id for compatibility
         if (foundItem) {
           foundItem.id = foundItem.uid;
+          this.log(LogLevel.DEBUG, `Found matching item:`, foundItem);
         }
       } catch (error) {
         this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
@@ -3102,8 +3105,10 @@ class HomeAssistantServer {
             this.log(LogLevel.DEBUG, `No item_id provided, searching for item by name: ${args.item}`);
             const foundItem = await this.findShoppingListItemByName(args.item);
             if (foundItem) {
-              removeItemId = foundItem.id;
-              this.log(LogLevel.DEBUG, `Found item by name, using ID: ${removeItemId}`);
+              removeItemId = foundItem.id || foundItem.uid;
+              this.log(LogLevel.DEBUG, `Found item by name, using ID: ${removeItemId}`, foundItem);
+            } else {
+              this.log(LogLevel.DEBUG, `Item '${args.item}' not found in shopping list`);
             }
           }
           
@@ -3112,20 +3117,24 @@ class HomeAssistantServer {
           }
           
           // Try multiple approaches for removing items
+          this.log(LogLevel.DEBUG, `Attempting to remove item with ID: ${removeItemId}`);
           try {
             // First try the todo service approach
+            this.log(LogLevel.DEBUG, 'Trying todo.remove_item service');
             await this.withRetry(() => 
               this.haClient.post('/api/services/todo/remove_item', {
                 entity_id: 'todo.shopping_list',
                 uid: removeItemId,
               })
             );
+            this.log(LogLevel.DEBUG, 'Todo service succeeded');
           } catch (error) {
             this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
             // Fallback to direct API call
             await this.withRetry(() => 
               this.haClient.delete(`/api/shopping_list/item/${removeItemId}`)
             );
+            this.log(LogLevel.DEBUG, 'Direct API succeeded');
           }
           
           this.log(LogLevel.INFO, `Removed shopping list item ${removeItemId}`);
