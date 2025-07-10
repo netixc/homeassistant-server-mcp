@@ -2566,22 +2566,41 @@ class HomeAssistantServer {
             throw new McpError(ErrorCode.InvalidParams, 'Invalid todo list entity_id format');
           }
           
-          const itemsResponse = await this.withRetry(() => 
-            this.haClient.get(`/api/services/todo/get_items`, {
-              params: {
-                entity_id: sanitizedEntityId
+          // Try multiple approaches to get todo items
+          let items = [];
+          let itemsFound = false;
+          
+          try {
+            // Method 1: Direct API endpoint (preferred)
+            const listId = sanitizedEntityId.replace('todo.', '');
+            const itemsResponse = await this.withRetry(() => 
+              this.haClient.get(`/api/todo/${listId}/items`)
+            );
+            items = itemsResponse.data || [];
+            itemsFound = true;
+          } catch (error) {
+            this.log(LogLevel.DEBUG, `Direct API failed for ${sanitizedEntityId}, trying service call`);
+            
+            try {
+              // Method 2: Service call approach
+              const serviceResponse = await this.withRetry(() => 
+                this.haClient.post('/api/services/todo/get_items', {
+                  entity_id: sanitizedEntityId,
+                })
+              );
+              
+              // Service calls return different structure
+              if (serviceResponse.data && Array.isArray(serviceResponse.data)) {
+                items = serviceResponse.data[0]?.items || [];
+              } else {
+                items = serviceResponse.data?.items || [];
               }
-            })
-          );
-          
-          // Alternative approach using service call
-          const itemsServiceResponse = await this.withRetry(() => 
-            this.haClient.post('/api/services/todo/get_items', {
-              entity_id: sanitizedEntityId,
-            })
-          );
-          
-          const items = itemsServiceResponse.data?.[0]?.items || [];
+              itemsFound = true;
+            } catch (serviceError) {
+              this.log(LogLevel.ERROR, `Both methods failed for getting todo items from ${sanitizedEntityId}`);
+              throw new McpError(ErrorCode.InternalError, `Failed to retrieve todo items: ${serviceError}`);
+            }
+          }
           
           return {
             content: [
@@ -2662,8 +2681,13 @@ class HomeAssistantServer {
           
           const updateData: any = {
             entity_id: updateEntityId,
-            item: args.item_id,
           };
+          
+          // Try both uid and item parameters for compatibility
+          if (args.item_id) {
+            updateData.uid = args.item_id;
+            updateData.item = args.item_id; // Fallback for older versions
+          }
           
           if (args.summary) {
             updateData.summary = args.summary;
@@ -2681,9 +2705,14 @@ class HomeAssistantServer {
             updateData.due_date = args.due_date;
           }
           
-          await this.withRetry(() => 
-            this.haClient.post('/api/services/todo/update_item', updateData)
-          );
+          try {
+            await this.withRetry(() => 
+              this.haClient.post('/api/services/todo/update_item', updateData)
+            );
+          } catch (error) {
+            this.log(LogLevel.ERROR, `Failed to update todo item:`, { updateData, error });
+            throw new McpError(ErrorCode.InternalError, `Todo list operation failed: ${error}`);
+          }
           
           this.log(LogLevel.INFO, `Updated item ${args.item_id} in ${updateEntityId}`);
           
@@ -2710,12 +2739,24 @@ class HomeAssistantServer {
             throw new McpError(ErrorCode.InvalidParams, 'Invalid todo list entity_id format');
           }
           
-          await this.withRetry(() => 
-            this.haClient.post('/api/services/todo/remove_item', {
-              entity_id: removeEntityId,
-              item: args.item_id,
-            })
-          );
+          // Try multiple parameter formats for compatibility
+          const removeData: any = {
+            entity_id: removeEntityId,
+          };
+          
+          if (args.item_id) {
+            removeData.uid = args.item_id;
+            removeData.item = args.item_id; // Fallback for older versions
+          }
+          
+          try {
+            await this.withRetry(() => 
+              this.haClient.post('/api/services/todo/remove_item', removeData)
+            );
+          } catch (error) {
+            this.log(LogLevel.ERROR, `Failed to remove todo item:`, { removeData, error });
+            throw new McpError(ErrorCode.InternalError, `Todo list operation failed: ${error}`);
+          }
           
           this.log(LogLevel.INFO, `Removed item ${args.item_id} from ${removeEntityId}`);
           
