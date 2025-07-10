@@ -887,6 +887,10 @@ class HomeAssistantServer {
                 type: 'string',
                 description: 'Item ID for update/remove operations',
               },
+              id: {
+                type: 'string',
+                description: 'Alternative item ID parameter for update/remove operations',
+              },
             },
             required: ['action'],
           },
@@ -2914,8 +2918,12 @@ class HomeAssistantServer {
           };
           
         case 'update':
-          if (!args.item_id) {
-            throw new McpError(ErrorCode.InvalidParams, 'item_id is required for update action');
+          this.log(LogLevel.DEBUG, 'Shopping list update called with args:', args);
+          
+          // Handle both item_id and id parameters for compatibility
+          const itemId = args.item_id || args.id;
+          if (!itemId) {
+            throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for update action. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
           const updateData: any = {};
@@ -2929,10 +2937,10 @@ class HomeAssistantServer {
           }
           
           await this.withRetry(() => 
-            this.haClient.post(`/api/shopping_list/item/${args.item_id}`, updateData)
+            this.haClient.post(`/api/shopping_list/item/${itemId}`, updateData)
           );
           
-          this.log(LogLevel.INFO, `Updated shopping list item ${args.item_id}`);
+          this.log(LogLevel.INFO, `Updated shopping list item ${itemId}`);
           
           return {
             content: [
@@ -2940,22 +2948,26 @@ class HomeAssistantServer {
                 type: 'text',
                 text: JSON.stringify({
                   item_updated: true,
-                  item_id: args.item_id,
+                  item_id: itemId,
                 }, null, 2),
               },
             ],
           };
           
         case 'remove':
-          if (!args.item_id) {
-            throw new McpError(ErrorCode.InvalidParams, 'item_id is required for remove action');
+          this.log(LogLevel.DEBUG, 'Shopping list remove called with args:', args);
+          
+          // Handle both item_id and id parameters for compatibility
+          const removeItemId = args.item_id || args.id;
+          if (!removeItemId) {
+            throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for remove action. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
           await this.withRetry(() => 
-            this.haClient.delete(`/api/shopping_list/item/${args.item_id}`)
+            this.haClient.delete(`/api/shopping_list/item/${removeItemId}`)
           );
           
-          this.log(LogLevel.INFO, `Removed shopping list item ${args.item_id}`);
+          this.log(LogLevel.INFO, `Removed shopping list item ${removeItemId}`);
           
           return {
             content: [
@@ -2963,7 +2975,7 @@ class HomeAssistantServer {
                 type: 'text',
                 text: JSON.stringify({
                   item_removed: true,
-                  item_id: args.item_id,
+                  item_id: removeItemId,
                 }, null, 2),
               },
             ],
