@@ -2862,13 +2862,20 @@ class HomeAssistantServer {
   private async findShoppingListItemByName(itemName: string): Promise<any | null> {
     try {
       const response = await this.withRetry(() => 
-        this.haClient.get('/api/shopping_list')
+        this.haClient.post('/api/services/todo/get_items', {
+          entity_id: 'todo.shopping_list',
+        })
       );
       
       const items = response.data || [];
       const foundItem = items.find((item: any) => 
-        item.name && item.name.toLowerCase() === itemName.toLowerCase()
+        item.summary && item.summary.toLowerCase() === itemName.toLowerCase()
       );
+      
+      // Map uid to id for compatibility
+      if (foundItem) {
+        foundItem.id = foundItem.uid;
+      }
       
       return foundItem || null;
     } catch (error) {
@@ -2890,7 +2897,9 @@ class HomeAssistantServer {
       switch (args.action) {
         case 'get':
           const getResponse = await this.withRetry(() => 
-            this.haClient.get('/api/shopping_list')
+            this.haClient.post('/api/services/todo/get_items', {
+              entity_id: 'todo.shopping_list',
+            })
           );
           
           const items = getResponse.data || [];
@@ -2901,12 +2910,12 @@ class HomeAssistantServer {
                 type: 'text',
                 text: JSON.stringify({
                   shopping_list: items.map((item: any) => ({
-                    id: item.id,
-                    name: item.name,
-                    complete: item.complete,
+                    id: item.uid,
+                    name: item.summary,
+                    complete: item.status === 'completed',
                   })),
                   total_items: items.length,
-                  incomplete_items: items.filter((item: any) => !item.complete).length,
+                  incomplete_items: items.filter((item: any) => item.status !== 'completed').length,
                 }, null, 2),
               },
             ],
@@ -2918,8 +2927,9 @@ class HomeAssistantServer {
           }
           
           const addResponse = await this.withRetry(() => 
-            this.haClient.post('/api/shopping_list/item', {
-              name: args.item,
+            this.haClient.post('/api/services/todo/add_item', {
+              entity_id: 'todo.shopping_list',
+              item: args.item,
             })
           );
           
@@ -2958,18 +2968,21 @@ class HomeAssistantServer {
             throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for update action, or provide item name to search. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
-          const updateData: any = {};
+          const updateData: any = {
+            entity_id: 'todo.shopping_list',
+            item: itemId,
+          };
           
           if (args.item) {
-            updateData.name = args.item;
+            updateData.rename = args.item;
           }
           
           if (args.complete !== undefined) {
-            updateData.complete = args.complete;
+            updateData.status = args.complete ? 'completed' : 'needs_action';
           }
           
           await this.withRetry(() => 
-            this.haClient.post(`/api/shopping_list/item/${itemId}`, updateData)
+            this.haClient.post('/api/services/todo/update_item', updateData)
           );
           
           this.log(LogLevel.INFO, `Updated shopping list item ${itemId}`);
@@ -3006,10 +3019,10 @@ class HomeAssistantServer {
             throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for remove action, or provide item name to search. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
-          // Use POST to shopping_list service instead of DELETE endpoint  
-          // The shopping list API doesn't support DELETE, only POST operations
+          // Use todo.remove_item service as shopping list is implemented as a todo entity
           await this.withRetry(() => 
-            this.haClient.post('/api/services/shopping_list/remove_item', {
+            this.haClient.post('/api/services/todo/remove_item', {
+              entity_id: 'todo.shopping_list',
               item: removeItemId,
             })
           );
