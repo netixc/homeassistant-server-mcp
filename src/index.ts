@@ -3006,8 +3006,12 @@ class HomeAssistantServer {
             throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for remove action, or provide item name to search. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
+          // Use POST to shopping_list service instead of DELETE endpoint  
+          // The shopping list API doesn't support DELETE, only POST operations
           await this.withRetry(() => 
-            this.haClient.delete(`/api/shopping_list/item/${removeItemId}`)
+            this.haClient.post('/api/services/shopping_list/remove_item', {
+              item: removeItemId,
+            })
           );
           
           this.log(LogLevel.INFO, `Removed shopping list item ${removeItemId}`);
