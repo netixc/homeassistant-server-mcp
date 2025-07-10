@@ -3097,47 +3097,54 @@ class HomeAssistantServer {
         case 'remove':
           this.log(LogLevel.DEBUG, 'Shopping list remove called with args:', args);
           
-          // Handle both item_id and id parameters for compatibility
-          let removeItemId = args.item_id || args.id;
-          
-          // If no ID provided, try to find item by name
-          if (!removeItemId && args.item) {
-            this.log(LogLevel.DEBUG, `No item_id provided, searching for item by name: ${args.item}`);
-            const foundItem = await this.findShoppingListItemByName(args.item);
-            if (foundItem) {
-              removeItemId = foundItem.id || foundItem.uid;
-              this.log(LogLevel.DEBUG, `Found item by name, using ID: ${removeItemId}`, foundItem);
-            } else {
-              this.log(LogLevel.DEBUG, `Item '${args.item}' not found in shopping list`);
-            }
-          }
-          
-          if (!removeItemId) {
-            throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for remove action, or provide item name to search. Available args: ' + JSON.stringify(Object.keys(args)));
+          // For remove operation, we need either item name or item_id
+          if (!args.item && !args.item_id && !args.id) {
+            throw new McpError(ErrorCode.InvalidParams, 'Either item (name) or item_id is required for remove action. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
           // Try multiple approaches for removing items
-          this.log(LogLevel.DEBUG, `Attempting to remove item with ID: ${removeItemId}`);
+          this.log(LogLevel.DEBUG, `Attempting to remove item: ${args.item || args.item_id || args.id}`);
           try {
-            // First try the todo service approach
-            this.log(LogLevel.DEBUG, 'Trying todo.remove_item service');
-            await this.withRetry(() => 
-              this.haClient.post('/api/services/todo/remove_item', {
-                entity_id: 'todo.shopping_list',
-                uid: removeItemId,
-              })
-            );
-            this.log(LogLevel.DEBUG, 'Todo service succeeded');
+            // First try the todo service approach using item name (preferred)
+            if (args.item) {
+              this.log(LogLevel.DEBUG, 'Trying todo.remove_item service with item name');
+              await this.withRetry(() => 
+                this.haClient.post('/api/services/todo/remove_item', {
+                  entity_id: 'todo.shopping_list',
+                  item: args.item, // Use the item name directly
+                })
+              );
+              this.log(LogLevel.DEBUG, 'Todo service with item name succeeded');
+            } else {
+              // If only ID provided, try to find the item first and use its name
+              const itemId = args.item_id || args.id;
+              this.log(LogLevel.DEBUG, `Looking up item by ID: ${itemId}`);
+              const foundItem = await this.findShoppingListItemByName(''); // We'll need to search all items
+              // For now, try with the ID directly
+              this.log(LogLevel.DEBUG, 'Trying todo.remove_item service with UID');
+              await this.withRetry(() => 
+                this.haClient.post('/api/services/todo/remove_item', {
+                  entity_id: 'todo.shopping_list',
+                  item: itemId, // Use the UID
+                })
+              );
+              this.log(LogLevel.DEBUG, 'Todo service with UID succeeded');
+            }
           } catch (error) {
             this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
             // Fallback to direct API call
-            await this.withRetry(() => 
-              this.haClient.delete(`/api/shopping_list/item/${removeItemId}`)
-            );
-            this.log(LogLevel.DEBUG, 'Direct API succeeded');
+            const removeItemId = args.item_id || args.id;
+            if (removeItemId) {
+              await this.withRetry(() => 
+                this.haClient.delete(`/api/shopping_list/item/${removeItemId}`)
+              );
+              this.log(LogLevel.DEBUG, 'Direct API succeeded');
+            } else {
+              throw new McpError(ErrorCode.InvalidParams, 'Cannot remove item: no valid ID found and todo service failed');
+            }
           }
           
-          this.log(LogLevel.INFO, `Removed shopping list item ${removeItemId}`);
+          this.log(LogLevel.INFO, `Removed shopping list item ${args.item || args.item_id || args.id}`);
           
           return {
             content: [
@@ -3145,7 +3152,7 @@ class HomeAssistantServer {
                 type: 'text',
                 text: JSON.stringify({
                   item_removed: true,
-                  item_id: removeItemId,
+                  item: args.item || args.item_id || args.id,
                 }, null, 2),
               },
             ],
