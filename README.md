@@ -44,7 +44,7 @@ npm run build
   "mcpServers": {
     "homeassistant": {
       "command": "node",
-      "args": ["/path/to/homeassistant-mcp/homeassistant-server/build/index.js"],
+      "args": ["/path/to/homeassistant-server-mcp/build/index.js"],
       "env": {
         "HA_URL": "http://your-homeassistant-url:8123",
         "HA_TOKEN": "your-long-lived-access-token"
@@ -66,8 +66,8 @@ You can optionally enable only specific tools by using the `--tools` parameter:
     "homeassistant": {
       "command": "node",
       "args": [
-        "/path/to/homeassistant-mcp/homeassistant-server/build/index.js",
-        "--tools=get_state,toggle_entity,control_light,list_entities"
+        "/path/to/homeassistant-server-mcp/build/index.js",
+        "--tools=get_state,toggle_entity,trigger_automation,run_script,list_entities,control_light,send_remote_command,launch_app,open_streaming_app,activate_scene,list_scenes,control_media_player,get_media_player_state,send_notification,list_notify_services,get_sensor_data,list_sensors,call_service,list_services,render_template,get_events,fire_event,backup_management,system_info,manage_todo_lists,manage_shopping_list"
       ],
       "env": {
         "HA_URL": "http://your-homeassistant-url:8123",
@@ -81,15 +81,15 @@ You can optionally enable only specific tools by using the `--tools` parameter:
 Available tools:
 - `get_state` - Get entity states
 - `toggle_entity` - Toggle entities on/off
-- `control_light` - Advanced light control
-- `list_entities` - List available entities
 - `trigger_automation` - Trigger automations
 - `run_script` - Run scripts
-- `activate_scene` - Activate scenes
-- `list_scenes` - List available scenes
+- `list_entities` - List available entities
+- `control_light` - Advanced light control
 - `send_remote_command` - Send remote commands
 - `launch_app` - Launch apps on devices
 - `open_streaming_app` - Quick streaming app launcher
+- `activate_scene` - Activate scenes
+- `list_scenes` - List available scenes
 - `control_media_player` - Control media players
 - `get_media_player_state` - Get media player state
 - `send_notification` - Send notifications
@@ -233,6 +233,19 @@ use_mcp_tool({
   }
 });
 ```
+
+## Important Notes
+
+### Shopping List Implementation
+The shopping list functionality in this server uses Home Assistant's todo service (`todo.shopping_list` entity) rather than the legacy shopping list REST API. This provides better compatibility with modern Home Assistant installations where the shopping list is implemented as a todo entity.
+
+All shopping list operations (add, update, remove, get) use the todo service calls:
+- `todo.add_item` - Add items to the shopping list
+- `todo.update_item` - Update existing items (mark complete/incomplete, rename)
+- `todo.remove_item` - Remove items from the shopping list
+- `todo.get_items` - Get all items from the shopping list
+
+This ensures reliable functionality and avoids HTTP 405 errors that can occur with the legacy REST API endpoints.
 
 ## License
 
