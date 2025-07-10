@@ -3045,7 +3045,7 @@ class HomeAssistantServer {
             // First try the todo service approach
             const updateData: any = {
               entity_id: 'todo.shopping_list',
-              item: itemId,
+              uid: itemId,
             };
             
             if (args.item) {
@@ -3117,7 +3117,7 @@ class HomeAssistantServer {
             await this.withRetry(() => 
               this.haClient.post('/api/services/todo/remove_item', {
                 entity_id: 'todo.shopping_list',
-                item: removeItemId,
+                uid: removeItemId,
               })
             );
           } catch (error) {
