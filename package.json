@@ -18,10 +18,12 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "0.6.0",
-    "axios": "^1.7.9"
+    "axios": "^1.7.9",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.24",
+    "@types/ws": "^8.5.10",
     "typescript": "^5.3.3"
   }
 }

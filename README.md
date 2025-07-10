@@ -56,6 +56,58 @@ npm run build
 
 Replace `your-homeassistant-url` and `your-long-lived-access-token` with your Home Assistant instance URL and access token.
 
+### Selective Tool Loading
+
+You can optionally enable only specific tools by using the `--tools` parameter:
+
+```json
+{
+  "mcpServers": {
+    "homeassistant": {
+      "command": "node",
+      "args": [
+        "/path/to/homeassistant-mcp/homeassistant-server/build/index.js",
+        "--tools=get_state,toggle_entity,control_light,list_entities"
+      ],
+      "env": {
+        "HA_URL": "http://your-homeassistant-url:8123",
+        "HA_TOKEN": "your-long-lived-access-token"
+      }
+    }
+  }
+}
+```
+
+Available tools:
+- `get_state` - Get entity states
+- `toggle_entity` - Toggle entities on/off
+- `control_light` - Advanced light control
+- `list_entities` - List available entities
+- `trigger_automation` - Trigger automations
+- `run_script` - Run scripts
+- `activate_scene` - Activate scenes
+- `list_scenes` - List available scenes
+- `send_remote_command` - Send remote commands
+- `launch_app` - Launch apps on devices
+- `open_streaming_app` - Quick streaming app launcher
+- `control_media_player` - Control media players
+- `get_media_player_state` - Get media player state
+- `send_notification` - Send notifications
+- `list_notify_services` - List notification services
+- `get_sensor_data` - Get sensor data
+- `list_sensors` - List all sensors
+- `call_service` - Call any HA service
+- `list_services` - List available services
+- `render_template` - Render templates
+- `get_events` - Get recent events
+- `fire_event` - Fire custom events
+- `backup_management` - Manage backups
+- `system_info` - Get system information
+- `manage_todo_lists` - Manage to-do lists
+- `manage_shopping_list` - Manage shopping list
+
+If no `--tools` parameter is provided, all tools will be enabled.
+
 ## Usage
 
 The server provides the following tools:
