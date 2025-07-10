@@ -3257,14 +3257,14 @@ class HomeAssistantServer {
           // Try multiple approaches for getting todo items
           let items = [];
           try {
-            // First try the service approach with correct format
+            // Use the exact format you specified - this will show all items
             const getResponse = await this.withRetry(() => 
               this.haClient.post('/api/services/todo/get_items', {
                 target: {
                   entity_id: listEntityId,
                 },
                 data: {
-                  status: ['needs_action', 'completed'] // Get all items
+                  status: ['needs_action']
                 }
               })
             );
