@@ -237,13 +237,18 @@ use_mcp_tool({
 ## Important Notes
 
 ### Shopping List Implementation
-The shopping list functionality in this server uses Home Assistant's todo service (`todo.shopping_list` entity) rather than the legacy shopping list REST API. This provides better compatibility with modern Home Assistant installations where the shopping list is implemented as a todo entity.
+The shopping list functionality in this server uses Home Assistant's todo service rather than the legacy shopping list REST API. This provides better compatibility with modern Home Assistant installations where the shopping list is implemented as a todo entity.
 
 All shopping list operations (add, update, remove, get) use the todo service calls:
 - `todo.add_item` - Add items to the shopping list
 - `todo.update_item` - Update existing items (mark complete/incomplete, rename)
 - `todo.remove_item` - Remove items from the shopping list
 - `todo.get_items` - Get all items from the shopping list
+
+**Custom Todo Lists**: The `manage_shopping_list` tool now supports any todo list by using the `list_id` parameter. For example:
+- `list_id: "todo.shopping_list"` (default)
+- `list_id: "todo.my_custom_list"`
+- `list_id: "todo.groceries"`
 
 This ensures reliable functionality and avoids HTTP 405 errors that can occur with the legacy REST API endpoints.
 

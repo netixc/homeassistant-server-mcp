@@ -891,6 +891,10 @@ class HomeAssistantServer {
                 type: 'string',
                 description: 'Alternative item ID parameter for update/remove operations',
               },
+              list_id: {
+                type: 'string',
+                description: 'Todo list entity ID (e.g., "todo.shopping_list", "todo.my_list"). Defaults to "todo.shopping_list"',
+              },
             },
             required: ['action'],
           },
@@ -2859,7 +2863,7 @@ class HomeAssistantServer {
   /**
    * Helper function to find shopping list item by name
    */
-  private async findShoppingListItemByName(itemName: string): Promise<any | null> {
+  private async findShoppingListItemByName(itemName: string, listEntityId: string = 'todo.shopping_list'): Promise<any | null> {
     try {
       // Try multiple approaches for finding items
       let items = [];
@@ -2870,7 +2874,7 @@ class HomeAssistantServer {
         this.log(LogLevel.DEBUG, 'Trying todo.get_items service for item lookup');
         const response = await this.withRetry(() => 
           this.haClient.post('/api/services/todo/get_items', {
-            entity_id: 'todo.shopping_list',
+            entity_id: listEntityId,
           })
         );
         items = response.data || [];
@@ -2899,7 +2903,7 @@ class HomeAssistantServer {
           this.log(LogLevel.DEBUG, 'Direct API also failed:', apiError);
           // Try todo entity state
           const stateResponse = await this.withRetry(() => 
-            this.haClient.get('/api/states/todo.shopping_list')
+            this.haClient.get(`/api/states/${listEntityId}`)
           );
           items = stateResponse.data?.attributes?.items || [];
           foundItem = items.find((item: any) => 
@@ -2929,6 +2933,10 @@ class HomeAssistantServer {
       throw new McpError(ErrorCode.InvalidParams, 'action is required');
     }
     
+    // Use provided list_id or default to shopping_list
+    const listEntityId = args.list_id || 'todo.shopping_list';
+    this.log(LogLevel.DEBUG, `Using todo list: ${listEntityId}`);
+    
     try {
       switch (args.action) {
         case 'get':
@@ -2938,7 +2946,7 @@ class HomeAssistantServer {
             // First try the service approach
             const getResponse = await this.withRetry(() => 
               this.haClient.post('/api/services/todo/get_items', {
-                entity_id: 'todo.shopping_list',
+                entity_id: listEntityId,
               })
             );
             items = getResponse.data || [];
@@ -2958,7 +2966,7 @@ class HomeAssistantServer {
               this.log(LogLevel.DEBUG, 'Direct API also failed:', apiError);
               // Try todo entity state
               const stateResponse = await this.withRetry(() => 
-                this.haClient.get('/api/states/todo.shopping_list')
+                this.haClient.get(`/api/states/${listEntityId}`)
               );
               items = stateResponse.data?.attributes?.items || [];
             }
@@ -2994,7 +3002,7 @@ class HomeAssistantServer {
             // First try the todo service approach
             addResponse = await this.withRetry(() => 
               this.haClient.post('/api/services/todo/add_item', {
-                entity_id: 'todo.shopping_list',
+                entity_id: listEntityId,
                 item: args.item,
               })
             );
@@ -3032,7 +3040,7 @@ class HomeAssistantServer {
           // If no ID provided, try to find item by name
           if (!itemId && args.item) {
             this.log(LogLevel.DEBUG, `No item_id provided, searching for item by name: ${args.item}`);
-            const foundItem = await this.findShoppingListItemByName(args.item);
+            const foundItem = await this.findShoppingListItemByName(args.item, listEntityId);
             if (foundItem) {
               itemId = foundItem.id;
               this.log(LogLevel.DEBUG, `Found item by name, using ID: ${itemId}`);
@@ -3047,7 +3055,7 @@ class HomeAssistantServer {
           try {
             // First try the todo service approach
             const updateData: any = {
-              entity_id: 'todo.shopping_list',
+              entity_id: listEntityId,
               uid: itemId,
             };
             
@@ -3110,7 +3118,7 @@ class HomeAssistantServer {
               this.log(LogLevel.DEBUG, 'Trying todo.remove_item service with item name');
               await this.withRetry(() => 
                 this.haClient.post('/api/services/todo/remove_item', {
-                  entity_id: 'todo.shopping_list',
+                  entity_id: listEntityId,
                   item: args.item, // Use the item name directly
                 })
               );
@@ -3119,12 +3127,12 @@ class HomeAssistantServer {
               // If only ID provided, try to find the item first and use its name
               const itemId = args.item_id || args.id;
               this.log(LogLevel.DEBUG, `Looking up item by ID: ${itemId}`);
-              const foundItem = await this.findShoppingListItemByName(''); // We'll need to search all items
+              const foundItem = await this.findShoppingListItemByName('', listEntityId); // We'll need to search all items
               // For now, try with the ID directly
               this.log(LogLevel.DEBUG, 'Trying todo.remove_item service with UID');
               await this.withRetry(() => 
                 this.haClient.post('/api/services/todo/remove_item', {
-                  entity_id: 'todo.shopping_list',
+                  entity_id: listEntityId,
                   item: itemId, // Use the UID
                 })
               );
