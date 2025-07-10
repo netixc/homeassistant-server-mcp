@@ -895,41 +895,6 @@ class HomeAssistantServer {
             required: ['action'],
           },
         },
-        {
-          name: 'manage_todo_list',
-          description: 'Manage any Home Assistant todo list (custom lists, etc.)',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              action: {
-                type: 'string',
-                description: 'Todo list action',
-                enum: ['get', 'add', 'update', 'remove', 'clear'],
-              },
-              list_id: {
-                type: 'string',
-                description: 'Todo list entity ID (e.g., "todo.my_list", "todo.groceries"). Required.',
-              },
-              item: {
-                type: 'string',
-                description: 'Item name for add/update/remove operations. For update/remove, this can be used to find the item if item_id is not provided.',
-              },
-              complete: {
-                type: 'boolean',
-                description: 'Mark item as complete/incomplete',
-              },
-              item_id: {
-                type: 'string',
-                description: 'Item ID for update/remove operations (preferred). If not provided, the system will search by item name.',
-              },
-              id: {
-                type: 'string',
-                description: 'Alternative item ID parameter for update/remove operations',
-              },
-            },
-            required: ['action', 'list_id'],
-          },
-        },
     ];
     
     // Filter tools based on enabledTools list
@@ -1004,8 +969,6 @@ class HomeAssistantServer {
             return await this.manageTodoLists(request.params.arguments || {});
           case 'manage_shopping_list':
             return await this.manageShoppingList(request.params.arguments || {});
-          case 'manage_todo_list':
-            return await this.manageTodoList(request.params.arguments || {});
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
