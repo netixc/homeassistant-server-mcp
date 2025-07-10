@@ -2861,20 +2861,53 @@ class HomeAssistantServer {
    */
   private async findShoppingListItemByName(itemName: string): Promise<any | null> {
     try {
-      const response = await this.withRetry(() => 
-        this.haClient.post('/api/services/todo/get_items', {
-          entity_id: 'todo.shopping_list',
-        })
-      );
+      // Try multiple approaches for finding items
+      let items = [];
+      let foundItem = null;
       
-      const items = response.data || [];
-      const foundItem = items.find((item: any) => 
-        item.summary && item.summary.toLowerCase() === itemName.toLowerCase()
-      );
-      
-      // Map uid to id for compatibility
-      if (foundItem) {
-        foundItem.id = foundItem.uid;
+      try {
+        // First try the todo service approach
+        const response = await this.withRetry(() => 
+          this.haClient.post('/api/services/todo/get_items', {
+            entity_id: 'todo.shopping_list',
+          })
+        );
+        items = response.data || [];
+        foundItem = items.find((item: any) => 
+          item.summary && item.summary.toLowerCase() === itemName.toLowerCase()
+        );
+        
+        // Map uid to id for compatibility
+        if (foundItem) {
+          foundItem.id = foundItem.uid;
+        }
+      } catch (error) {
+        this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
+        // Fallback to direct API call
+        try {
+          const response = await this.withRetry(() => 
+            this.haClient.get('/api/shopping_list')
+          );
+          items = response.data || [];
+          foundItem = items.find((item: any) => 
+            item.name && item.name.toLowerCase() === itemName.toLowerCase()
+          );
+        } catch (apiError) {
+          this.log(LogLevel.DEBUG, 'Direct API also failed:', apiError);
+          // Try todo entity state
+          const stateResponse = await this.withRetry(() => 
+            this.haClient.get('/api/states/todo.shopping_list')
+          );
+          items = stateResponse.data?.attributes?.items || [];
+          foundItem = items.find((item: any) => 
+            item.summary && item.summary.toLowerCase() === itemName.toLowerCase()
+          );
+          
+          // Map uid to id for compatibility
+          if (foundItem) {
+            foundItem.id = foundItem.uid;
+          }
+        }
       }
       
       return foundItem || null;
@@ -2896,13 +2929,37 @@ class HomeAssistantServer {
     try {
       switch (args.action) {
         case 'get':
-          const getResponse = await this.withRetry(() => 
-            this.haClient.post('/api/services/todo/get_items', {
-              entity_id: 'todo.shopping_list',
-            })
-          );
-          
-          const items = getResponse.data || [];
+          // Try multiple approaches for getting todo items
+          let items = [];
+          try {
+            // First try the service approach
+            const getResponse = await this.withRetry(() => 
+              this.haClient.post('/api/services/todo/get_items', {
+                entity_id: 'todo.shopping_list',
+              })
+            );
+            items = getResponse.data || [];
+          } catch (error) {
+            this.log(LogLevel.DEBUG, 'Service call failed, trying direct API approach:', error);
+            // Fallback to direct API call
+            try {
+              const apiResponse = await this.withRetry(() => 
+                this.haClient.get('/api/shopping_list')
+              );
+              items = (apiResponse.data || []).map((item: any) => ({
+                uid: item.id,
+                summary: item.name,
+                status: item.complete ? 'completed' : 'needs_action'
+              }));
+            } catch (apiError) {
+              this.log(LogLevel.DEBUG, 'Direct API also failed:', apiError);
+              // Try todo entity state
+              const stateResponse = await this.withRetry(() => 
+                this.haClient.get('/api/states/todo.shopping_list')
+              );
+              items = stateResponse.data?.attributes?.items || [];
+            }
+          }
           
           return {
             content: [
@@ -2926,12 +2983,27 @@ class HomeAssistantServer {
             throw new McpError(ErrorCode.InvalidParams, 'item is required for add action');
           }
           
-          const addResponse = await this.withRetry(() => 
-            this.haClient.post('/api/services/todo/add_item', {
-              entity_id: 'todo.shopping_list',
-              item: args.item,
-            })
-          );
+          this.log(LogLevel.DEBUG, `Adding item to shopping list: ${args.item}`);
+          
+          // Try multiple approaches for adding items
+          let addResponse;
+          try {
+            // First try the todo service approach
+            addResponse = await this.withRetry(() => 
+              this.haClient.post('/api/services/todo/add_item', {
+                entity_id: 'todo.shopping_list',
+                item: args.item,
+              })
+            );
+          } catch (error) {
+            this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
+            // Fallback to direct API call
+            addResponse = await this.withRetry(() => 
+              this.haClient.post('/api/shopping_list/item', {
+                name: args.item,
+              })
+            );
+          }
           
           this.log(LogLevel.INFO, `Added item to shopping list: ${args.item}`);
           
@@ -2968,22 +3040,42 @@ class HomeAssistantServer {
             throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for update action, or provide item name to search. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
-          const updateData: any = {
-            entity_id: 'todo.shopping_list',
-            item: itemId,
-          };
-          
-          if (args.item) {
-            updateData.rename = args.item;
+          // Try multiple approaches for updating items
+          try {
+            // First try the todo service approach
+            const updateData: any = {
+              entity_id: 'todo.shopping_list',
+              item: itemId,
+            };
+            
+            if (args.item) {
+              updateData.rename = args.item;
+            }
+            
+            if (args.complete !== undefined) {
+              updateData.status = args.complete ? 'completed' : 'needs_action';
+            }
+            
+            await this.withRetry(() => 
+              this.haClient.post('/api/services/todo/update_item', updateData)
+            );
+          } catch (error) {
+            this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
+            // Fallback to direct API call
+            const updateData: any = {};
+            
+            if (args.item) {
+              updateData.name = args.item;
+            }
+            
+            if (args.complete !== undefined) {
+              updateData.complete = args.complete;
+            }
+            
+            await this.withRetry(() => 
+              this.haClient.post(`/api/shopping_list/item/${itemId}`, updateData)
+            );
           }
-          
-          if (args.complete !== undefined) {
-            updateData.status = args.complete ? 'completed' : 'needs_action';
-          }
-          
-          await this.withRetry(() => 
-            this.haClient.post('/api/services/todo/update_item', updateData)
-          );
           
           this.log(LogLevel.INFO, `Updated shopping list item ${itemId}`);
           
@@ -3019,13 +3111,22 @@ class HomeAssistantServer {
             throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for remove action, or provide item name to search. Available args: ' + JSON.stringify(Object.keys(args)));
           }
           
-          // Use todo.remove_item service as shopping list is implemented as a todo entity
-          await this.withRetry(() => 
-            this.haClient.post('/api/services/todo/remove_item', {
-              entity_id: 'todo.shopping_list',
-              item: removeItemId,
-            })
-          );
+          // Try multiple approaches for removing items
+          try {
+            // First try the todo service approach
+            await this.withRetry(() => 
+              this.haClient.post('/api/services/todo/remove_item', {
+                entity_id: 'todo.shopping_list',
+                item: removeItemId,
+              })
+            );
+          } catch (error) {
+            this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
+            // Fallback to direct API call
+            await this.withRetry(() => 
+              this.haClient.delete(`/api/shopping_list/item/${removeItemId}`)
+            );
+          }
           
           this.log(LogLevel.INFO, `Removed shopping list item ${removeItemId}`);
           
