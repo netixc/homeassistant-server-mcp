@@ -3257,10 +3257,15 @@ class HomeAssistantServer {
           // Try multiple approaches for getting todo items
           let items = [];
           try {
-            // First try the service approach
+            // First try the service approach with correct format
             const getResponse = await this.withRetry(() => 
               this.haClient.post('/api/services/todo/get_items', {
-                entity_id: listEntityId,
+                target: {
+                  entity_id: listEntityId,
+                },
+                data: {
+                  status: ['needs_action', 'completed'] // Get all items
+                }
               })
             );
             items = getResponse.data || [];
@@ -3315,16 +3320,20 @@ class HomeAssistantServer {
             throw new McpError(ErrorCode.InvalidParams, 'item is required for add action');
           }
           
-          this.log(LogLevel.DEBUG, `Adding item to shopping list: ${args.item}`);
+          this.log(LogLevel.DEBUG, `Adding item to todo list: ${args.item}`);
           
           // Try multiple approaches for adding items
           let addResponse;
           try {
-            // First try the todo service approach
+            // First try the todo service approach with correct format
             addResponse = await this.withRetry(() => 
               this.haClient.post('/api/services/todo/add_item', {
-                entity_id: listEntityId,
-                item: args.item,
+                target: {
+                  entity_id: listEntityId,
+                },
+                data: {
+                  item: args.item,
+                }
               })
             );
           } catch (error) {
@@ -3376,8 +3385,7 @@ class HomeAssistantServer {
           try {
             // First try the todo service approach
             const updateData: any = {
-              entity_id: listEntityId,
-              uid: itemId,
+              item: itemId,
             };
             
             if (args.item) {
@@ -3389,24 +3397,34 @@ class HomeAssistantServer {
             }
             
             await this.withRetry(() => 
-              this.haClient.post('/api/services/todo/update_item', updateData)
+              this.haClient.post('/api/services/todo/update_item', {
+                target: {
+                  entity_id: listEntityId,
+                },
+                data: updateData
+              })
             );
           } catch (error) {
-            this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
-            // Fallback to direct API call
-            const updateData: any = {};
-            
-            if (args.item) {
-              updateData.name = args.item;
+            this.log(LogLevel.DEBUG, 'Todo service failed:', error);
+            // For custom todo lists, there's no direct API fallback
+            if (listEntityId === 'todo.shopping_list') {
+              this.log(LogLevel.DEBUG, 'Trying shopping list API as fallback');
+              const fallbackData: any = {};
+              
+              if (args.item) {
+                fallbackData.name = args.item;
+              }
+              
+              if (args.complete !== undefined) {
+                fallbackData.complete = args.complete;
+              }
+              
+              await this.withRetry(() => 
+                this.haClient.post(`/api/shopping_list/item/${itemId}`, fallbackData)
+              );
+            } else {
+              throw error; // Re-throw the error for custom lists
             }
-            
-            if (args.complete !== undefined) {
-              updateData.complete = args.complete;
-            }
-            
-            await this.withRetry(() => 
-              this.haClient.post(`/api/shopping_list/item/${itemId}`, updateData)
-            );
           }
           
           this.log(LogLevel.INFO, `Updated todo list item ${itemId}`);
@@ -3418,6 +3436,7 @@ class HomeAssistantServer {
                 text: JSON.stringify({
                   item_updated: true,
                   item_id: itemId,
+                  list_id: listEntityId,
                 }, null, 2),
               },
             ],
