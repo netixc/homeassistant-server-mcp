@@ -67,7 +67,7 @@ You can optionally enable only specific tools by using the `--tools` parameter:
       "command": "node",
       "args": [
         "/path/to/homeassistant-server-mcp/build/index.js",
-        "--tools=get_state,toggle_entity,trigger_automation,run_script,list_entities,control_light,send_remote_command,launch_app,open_streaming_app,activate_scene,list_scenes,control_media_player,get_media_player_state,send_notification,list_notify_services,get_sensor_data,list_sensors,call_service,list_services,render_template,get_events,fire_event,backup_management,system_info,manage_todo_lists,manage_shopping_list"
+        "--tools=get_state,toggle_entity,trigger_automation,run_script,list_entities,control_light,send_remote_command,launch_app,open_streaming_app,activate_scene,list_scenes,control_media_player,get_media_player_state,send_notification,list_notify_services,get_sensor_data,list_sensors,call_service,list_services,render_template,get_events,fire_event,backup_management,system_info,manage_todo_lists,manage_shopping_list,manage_todo_list"
       ],
       "env": {
         "HA_URL": "http://your-homeassistant-url:8123",
@@ -105,6 +105,7 @@ Available tools:
 - `system_info` - Get system information
 - `manage_todo_lists` - Manage to-do lists
 - `manage_shopping_list` - Manage shopping list
+- `manage_todo_list` - Manage custom todo lists
 
 If no `--tools` parameter is provided, all tools will be enabled.
 
@@ -245,10 +246,14 @@ All shopping list operations (add, update, remove, get) use the todo service cal
 - `todo.remove_item` - Remove items from the shopping list
 - `todo.get_items` - Get all items from the shopping list
 
-**Custom Todo Lists**: The `manage_shopping_list` tool now supports any todo list by using the `list_id` parameter. For example:
-- `list_id: "todo.shopping_list"` (default)
+**Two Tools Available**:
+- `manage_shopping_list` - Works specifically with the default Home Assistant shopping list (`todo.shopping_list`)
+- `manage_todo_list` - Works with any custom todo list by requiring a `list_id` parameter
+
+**Custom Todo Lists**: Use the `manage_todo_list` tool for custom lists:
 - `list_id: "todo.my_custom_list"`
 - `list_id: "todo.groceries"`
+- `list_id: "todo.work_tasks"`
 
 This ensures reliable functionality and avoids HTTP 405 errors that can occur with the legacy REST API endpoints.
 

@@ -866,7 +866,7 @@ class HomeAssistantServer {
         },
         {
           name: 'manage_shopping_list',
-          description: 'Manage the Home Assistant shopping list (legacy support)',
+          description: 'Manage the Home Assistant shopping list',
           inputSchema: {
             type: 'object',
             properties: {
@@ -891,12 +891,43 @@ class HomeAssistantServer {
                 type: 'string',
                 description: 'Alternative item ID parameter for update/remove operations',
               },
-              list_id: {
-                type: 'string',
-                description: 'Todo list entity ID (e.g., "todo.shopping_list", "todo.my_list"). Defaults to "todo.shopping_list"',
-              },
             },
             required: ['action'],
+          },
+        },
+        {
+          name: 'manage_todo_list',
+          description: 'Manage any Home Assistant todo list (custom lists, etc.)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              action: {
+                type: 'string',
+                description: 'Todo list action',
+                enum: ['get', 'add', 'update', 'remove', 'clear'],
+              },
+              list_id: {
+                type: 'string',
+                description: 'Todo list entity ID (e.g., "todo.my_list", "todo.groceries"). Required.',
+              },
+              item: {
+                type: 'string',
+                description: 'Item name for add/update/remove operations. For update/remove, this can be used to find the item if item_id is not provided.',
+              },
+              complete: {
+                type: 'boolean',
+                description: 'Mark item as complete/incomplete',
+              },
+              item_id: {
+                type: 'string',
+                description: 'Item ID for update/remove operations (preferred). If not provided, the system will search by item name.',
+              },
+              id: {
+                type: 'string',
+                description: 'Alternative item ID parameter for update/remove operations',
+              },
+            },
+            required: ['action', 'list_id'],
           },
         },
     ];
@@ -973,6 +1004,8 @@ class HomeAssistantServer {
             return await this.manageTodoLists(request.params.arguments || {});
           case 'manage_shopping_list':
             return await this.manageShoppingList(request.params.arguments || {});
+          case 'manage_todo_list':
+            return await this.manageTodoList(request.params.arguments || {});
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -2861,9 +2894,9 @@ class HomeAssistantServer {
   }
 
   /**
-   * Helper function to find shopping list item by name
+   * Helper function to find todo list item by name
    */
-  private async findShoppingListItemByName(itemName: string, listEntityId: string = 'todo.shopping_list'): Promise<any | null> {
+  private async findTodoListItemByName(itemName: string, listEntityId: string = 'todo.shopping_list'): Promise<any | null> {
     try {
       // Try multiple approaches for finding items
       let items = [];
@@ -2878,7 +2911,7 @@ class HomeAssistantServer {
           })
         );
         items = response.data || [];
-        this.log(LogLevel.DEBUG, `Found ${items.length} items in shopping list`, items);
+        this.log(LogLevel.DEBUG, `Found ${items.length} items in todo list`, items);
         foundItem = items.find((item: any) => 
           item.summary && item.summary.toLowerCase() === itemName.toLowerCase()
         );
@@ -2919,7 +2952,7 @@ class HomeAssistantServer {
       
       return foundItem || null;
     } catch (error) {
-      this.log(LogLevel.ERROR, 'Failed to fetch shopping list for item lookup:', error);
+      this.log(LogLevel.ERROR, 'Failed to fetch todo list for item lookup:', error);
       return null;
     }
   }
@@ -2933,9 +2966,9 @@ class HomeAssistantServer {
       throw new McpError(ErrorCode.InvalidParams, 'action is required');
     }
     
-    // Use provided list_id or default to shopping_list
-    const listEntityId = args.list_id || 'todo.shopping_list';
-    this.log(LogLevel.DEBUG, `Using todo list: ${listEntityId}`);
+    // Always use the shopping list
+    const listEntityId = 'todo.shopping_list';
+    this.log(LogLevel.DEBUG, `Using shopping list: ${listEntityId}`);
     
     try {
       switch (args.action) {
@@ -3040,7 +3073,7 @@ class HomeAssistantServer {
           // If no ID provided, try to find item by name
           if (!itemId && args.item) {
             this.log(LogLevel.DEBUG, `No item_id provided, searching for item by name: ${args.item}`);
-            const foundItem = await this.findShoppingListItemByName(args.item, listEntityId);
+            const foundItem = await this.findTodoListItemByName(args.item, listEntityId);
             if (foundItem) {
               itemId = foundItem.id;
               this.log(LogLevel.DEBUG, `Found item by name, using ID: ${itemId}`);
@@ -3127,7 +3160,7 @@ class HomeAssistantServer {
               // If only ID provided, try to find the item first and use its name
               const itemId = args.item_id || args.id;
               this.log(LogLevel.DEBUG, `Looking up item by ID: ${itemId}`);
-              const foundItem = await this.findShoppingListItemByName('', listEntityId); // We'll need to search all items
+              const foundItem = await this.findTodoListItemByName('', listEntityId); // We'll need to search all items
               // For now, try with the ID directly
               this.log(LogLevel.DEBUG, 'Trying todo.remove_item service with UID');
               await this.withRetry(() => 
@@ -3192,6 +3225,287 @@ class HomeAssistantServer {
         const status = error.response?.status;
         if (status === 404) {
           throw new McpError(ErrorCode.InvalidParams, 'Shopping list item not found or shopping list integration not available');
+        } else if (status === 400) {
+          throw new McpError(ErrorCode.InvalidParams, `Invalid shopping list operation: ${error.response?.data?.message || 'Bad request'}`);
+        }
+      }
+      
+      this.log(LogLevel.ERROR, 'Shopping list operation failed:', error);
+      throw new McpError(ErrorCode.InternalError, 'Shopping list operation failed');
+    }
+  }
+
+  private async manageTodoList(args: any) {
+    if (!this.checkRateLimit()) {
+      throw new McpError(ErrorCode.InternalError, 'Rate limit exceeded');
+    }
+    
+    if (!args.action) {
+      throw new McpError(ErrorCode.InvalidParams, 'action is required');
+    }
+    
+    if (!args.list_id) {
+      throw new McpError(ErrorCode.InvalidParams, 'list_id is required for todo list operations');
+    }
+    
+    const listEntityId = args.list_id;
+    this.log(LogLevel.DEBUG, `Using todo list: ${listEntityId}`);
+    
+    try {
+      switch (args.action) {
+        case 'get':
+          // Try multiple approaches for getting todo items
+          let items = [];
+          try {
+            // First try the service approach
+            const getResponse = await this.withRetry(() => 
+              this.haClient.post('/api/services/todo/get_items', {
+                entity_id: listEntityId,
+              })
+            );
+            items = getResponse.data || [];
+          } catch (error) {
+            this.log(LogLevel.DEBUG, 'Service call failed, trying direct API approach:', error);
+            // Fallback to direct API call
+            try {
+              const apiResponse = await this.withRetry(() => 
+                this.haClient.get('/api/shopping_list')
+              );
+              items = (apiResponse.data || []).map((item: any) => ({
+                uid: item.id,
+                summary: item.name,
+                status: item.complete ? 'completed' : 'needs_action'
+              }));
+            } catch (apiError) {
+              this.log(LogLevel.DEBUG, 'Direct API also failed:', apiError);
+              // Try todo entity state
+              const stateResponse = await this.withRetry(() => 
+                this.haClient.get(`/api/states/${listEntityId}`)
+              );
+              items = stateResponse.data?.attributes?.items || [];
+            }
+          }
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  shopping_list: items.map((item: any) => ({
+                    id: item.uid,
+                    name: item.summary,
+                    complete: item.status === 'completed',
+                  })),
+                  total_items: items.length,
+                  incomplete_items: items.filter((item: any) => item.status !== 'completed').length,
+                }, null, 2),
+              },
+            ],
+          };
+          
+        case 'add':
+          if (!args.item) {
+            throw new McpError(ErrorCode.InvalidParams, 'item is required for add action');
+          }
+          
+          this.log(LogLevel.DEBUG, `Adding item to shopping list: ${args.item}`);
+          
+          // Try multiple approaches for adding items
+          let addResponse;
+          try {
+            // First try the todo service approach
+            addResponse = await this.withRetry(() => 
+              this.haClient.post('/api/services/todo/add_item', {
+                entity_id: listEntityId,
+                item: args.item,
+              })
+            );
+          } catch (error) {
+            this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
+            // Fallback to direct API call
+            addResponse = await this.withRetry(() => 
+              this.haClient.post('/api/shopping_list/item', {
+                name: args.item,
+              })
+            );
+          }
+          
+          this.log(LogLevel.INFO, `Added item to todo list: ${args.item}`);
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  item_added: true,
+                  item: args.item,
+                  id: addResponse.data?.id,
+                }, null, 2),
+              },
+            ],
+          };
+          
+        case 'update':
+          this.log(LogLevel.DEBUG, 'Shopping list update called with args:', args);
+          
+          // Handle both item_id and id parameters for compatibility
+          let itemId = args.item_id || args.id;
+          
+          // If no ID provided, try to find item by name
+          if (!itemId && args.item) {
+            this.log(LogLevel.DEBUG, `No item_id provided, searching for item by name: ${args.item}`);
+            const foundItem = await this.findTodoListItemByName(args.item, listEntityId);
+            if (foundItem) {
+              itemId = foundItem.id;
+              this.log(LogLevel.DEBUG, `Found item by name, using ID: ${itemId}`);
+            }
+          }
+          
+          if (!itemId) {
+            throw new McpError(ErrorCode.InvalidParams, 'item_id (or id) is required for update action, or provide item name to search. Available args: ' + JSON.stringify(Object.keys(args)));
+          }
+          
+          // Try multiple approaches for updating items
+          try {
+            // First try the todo service approach
+            const updateData: any = {
+              entity_id: listEntityId,
+              uid: itemId,
+            };
+            
+            if (args.item) {
+              updateData.rename = args.item;
+            }
+            
+            if (args.complete !== undefined) {
+              updateData.status = args.complete ? 'completed' : 'needs_action';
+            }
+            
+            await this.withRetry(() => 
+              this.haClient.post('/api/services/todo/update_item', updateData)
+            );
+          } catch (error) {
+            this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
+            // Fallback to direct API call
+            const updateData: any = {};
+            
+            if (args.item) {
+              updateData.name = args.item;
+            }
+            
+            if (args.complete !== undefined) {
+              updateData.complete = args.complete;
+            }
+            
+            await this.withRetry(() => 
+              this.haClient.post(`/api/shopping_list/item/${itemId}`, updateData)
+            );
+          }
+          
+          this.log(LogLevel.INFO, `Updated todo list item ${itemId}`);
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  item_updated: true,
+                  item_id: itemId,
+                }, null, 2),
+              },
+            ],
+          };
+          
+        case 'remove':
+          this.log(LogLevel.DEBUG, 'Shopping list remove called with args:', args);
+          
+          // For remove operation, we need either item name or item_id
+          if (!args.item && !args.item_id && !args.id) {
+            throw new McpError(ErrorCode.InvalidParams, 'Either item (name) or item_id is required for remove action. Available args: ' + JSON.stringify(Object.keys(args)));
+          }
+          
+          // Try multiple approaches for removing items
+          this.log(LogLevel.DEBUG, `Attempting to remove item: ${args.item || args.item_id || args.id}`);
+          try {
+            // First try the todo service approach using item name (preferred)
+            if (args.item) {
+              this.log(LogLevel.DEBUG, 'Trying todo.remove_item service with item name');
+              await this.withRetry(() => 
+                this.haClient.post('/api/services/todo/remove_item', {
+                  entity_id: listEntityId,
+                  item: args.item, // Use the item name directly
+                })
+              );
+              this.log(LogLevel.DEBUG, 'Todo service with item name succeeded');
+            } else {
+              // If only ID provided, try to find the item first and use its name
+              const itemId = args.item_id || args.id;
+              this.log(LogLevel.DEBUG, `Looking up item by ID: ${itemId}`);
+              const foundItem = await this.findTodoListItemByName('', listEntityId); // We'll need to search all items
+              // For now, try with the ID directly
+              this.log(LogLevel.DEBUG, 'Trying todo.remove_item service with UID');
+              await this.withRetry(() => 
+                this.haClient.post('/api/services/todo/remove_item', {
+                  entity_id: listEntityId,
+                  item: itemId, // Use the UID
+                })
+              );
+              this.log(LogLevel.DEBUG, 'Todo service with UID succeeded');
+            }
+          } catch (error) {
+            this.log(LogLevel.DEBUG, 'Todo service failed, trying direct API approach:', error);
+            // Fallback to direct API call
+            const removeItemId = args.item_id || args.id;
+            if (removeItemId) {
+              await this.withRetry(() => 
+                this.haClient.delete(`/api/shopping_list/item/${removeItemId}`)
+              );
+              this.log(LogLevel.DEBUG, 'Direct API succeeded');
+            } else {
+              throw new McpError(ErrorCode.InvalidParams, 'Cannot remove item: no valid ID found and todo service failed');
+            }
+          }
+          
+          this.log(LogLevel.INFO, `Removed todo list item ${args.item || args.item_id || args.id}`);
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  item_removed: true,
+                  item: args.item || args.item_id || args.id,
+                }, null, 2),
+              },
+            ],
+          };
+          
+        case 'clear':
+          const clearResponse = await this.withRetry(() => 
+            this.haClient.post('/api/shopping_list/clear_completed')
+          );
+          
+          this.log(LogLevel.INFO, 'Cleared completed shopping list items');
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  completed_items_cleared: true,
+                }, null, 2),
+              },
+            ],
+          };
+          
+        default:
+          throw new McpError(ErrorCode.InvalidParams, `Invalid action: ${args.action}`);
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status === 404) {
+          throw new McpError(ErrorCode.InvalidParams, 'Todo list item not found or todo list integration not available');
         } else if (status === 400) {
           throw new McpError(ErrorCode.InvalidParams, `Invalid shopping list operation: ${error.response?.data?.message || 'Bad request'}`);
         }
