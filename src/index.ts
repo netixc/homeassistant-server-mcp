@@ -3265,24 +3265,30 @@ class HomeAssistantServer {
             );
             items = getResponse.data || [];
           } catch (error) {
-            this.log(LogLevel.DEBUG, 'Service call failed, trying direct API approach:', error);
-            // Fallback to direct API call
+            this.log(LogLevel.DEBUG, 'Service call failed, trying entity state approach:', error);
+            // For custom todo lists, go directly to entity state (shopping list API won't work)
             try {
-              const apiResponse = await this.withRetry(() => 
-                this.haClient.get('/api/shopping_list')
-              );
-              items = (apiResponse.data || []).map((item: any) => ({
-                uid: item.id,
-                summary: item.name,
-                status: item.complete ? 'completed' : 'needs_action'
-              }));
-            } catch (apiError) {
-              this.log(LogLevel.DEBUG, 'Direct API also failed:', apiError);
-              // Try todo entity state
               const stateResponse = await this.withRetry(() => 
                 this.haClient.get(`/api/states/${listEntityId}`)
               );
               items = stateResponse.data?.attributes?.items || [];
+            } catch (stateError) {
+              this.log(LogLevel.DEBUG, 'Entity state also failed:', stateError);
+              // If it's shopping list, try the legacy API as last resort
+              if (listEntityId === 'todo.shopping_list') {
+                try {
+                  const apiResponse = await this.withRetry(() => 
+                    this.haClient.get('/api/shopping_list')
+                  );
+                  items = (apiResponse.data || []).map((item: any) => ({
+                    uid: item.id,
+                    summary: item.name,
+                    status: item.complete ? 'completed' : 'needs_action'
+                  }));
+                } catch (apiError) {
+                  this.log(LogLevel.DEBUG, 'All approaches failed:', apiError);
+                }
+              }
             }
           }
           
@@ -3291,11 +3297,12 @@ class HomeAssistantServer {
               {
                 type: 'text',
                 text: JSON.stringify({
-                  shopping_list: items.map((item: any) => ({
+                  todo_list: items.map((item: any) => ({
                     id: item.uid,
                     name: item.summary,
                     complete: item.status === 'completed',
                   })),
+                  list_id: listEntityId,
                   total_items: items.length,
                   incomplete_items: items.filter((item: any) => item.status !== 'completed').length,
                 }, null, 2),
