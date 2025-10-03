@@ -10,6 +10,14 @@ import {
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import WebSocket from 'ws';
 
+// Tool profiles for easy configuration
+const TOOL_PROFILES = {
+  minimal: ['get_state', 'call_service', 'list_entities'],
+  basic: ['get_state', 'call_service', 'list_entities', 'control_light', 'list_services'],
+  standard: ['get_state', 'call_service', 'list_entities', 'control_light', 'list_services', 'manage_shopping_list', 'render_template'],
+  complete: ['get_state', 'list_entities', 'control_light', 'call_service', 'list_services', 'render_template', 'manage_todo_lists', 'manage_shopping_list'],
+};
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 let enabledTools: string[] | null = null;
@@ -17,6 +25,14 @@ let enabledTools: string[] | null = null;
 for (const arg of args) {
   if (arg.startsWith('--tools=')) {
     enabledTools = arg.slice(8).split(',').map(t => t.trim());
+  } else if (arg.startsWith('--profile=')) {
+    const profile = arg.slice(10) as keyof typeof TOOL_PROFILES;
+    if (TOOL_PROFILES[profile]) {
+      enabledTools = TOOL_PROFILES[profile];
+    } else {
+      console.error(`Unknown profile: ${profile}. Available profiles: ${Object.keys(TOOL_PROFILES).join(', ')}`);
+      process.exit(1);
+    }
   }
 }
 
@@ -315,102 +331,55 @@ class HomeAssistantServer {
     const allTools = [
         {
           name: 'get_state',
-          description: 'Get the current state of a Home Assistant entity',
+          description: 'Get the current state and attributes of any Home Assistant entity (lights, switches, sensors, media players, etc.). Returns state value, attributes, and metadata. Use this for reading entity status. For controlling devices, use call_service or control_light instead.',
           inputSchema: {
             type: 'object',
             properties: {
               entity_id: {
                 type: 'string',
-                description: 'The entity ID to get state for (e.g., light.living_room)',
+                description: 'Entity ID (e.g., light.living_room, sensor.temperature)',
               },
             },
             required: ['entity_id'],
           },
         },
         {
-          name: 'toggle_entity',
-          description: 'Toggle a Home Assistant entity on/off',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              entity_id: {
-                type: 'string',
-                description: 'The entity ID to toggle (e.g., switch.bedroom)',
-              },
-              state: {
-                type: 'string',
-                description: 'The desired state (on/off)',
-                enum: ['on', 'off'],
-              },
-            },
-            required: ['entity_id', 'state'],
-          },
-        },
-        {
-          name: 'trigger_automation',
-          description: 'Trigger a Home Assistant automation',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              automation_id: {
-                type: 'string',
-                description: 'The automation ID to trigger (e.g., automation.morning_routine)',
-              },
-            },
-            required: ['automation_id'],
-          },
-        },
-        {
-          name: 'run_script',
-          description: 'Run a Home Assistant script',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              script_id: {
-                type: 'string',
-                description: 'The script ID to run (e.g., script.open_plex)',
-              },
-            },
-            required: ['script_id'],
-          },
-        },
-        {
           name: 'list_entities',
-          description: 'List all available entities in Home Assistant',
+          description: 'Discover all available entities in Home Assistant. Supports filtering by domain (light, switch, sensor, scene, automation, etc.). Returns entity IDs, friendly names, states, and attributes.',
           inputSchema: {
             type: 'object',
             properties: {
               domain: {
                 type: 'string',
-                description: 'Optional domain filter (e.g., light, switch, automation)',
+                description: 'Filter by domain: light, switch, sensor, scene, automation, media_player, climate, etc.',
               },
             },
           },
         },
         {
           name: 'control_light',
-          description: 'Control a Home Assistant light with advanced features like color, brightness, and temperature',
+          description: 'Control Home Assistant lights with advanced features: brightness (0-255), RGB color, and color temperature. Use this for lights only - it handles complex color/brightness settings that are error-prone with call_service. For simple on/off of non-light entities, use call_service instead.',
           inputSchema: {
             type: 'object',
             properties: {
               entity_id: {
                 type: 'string',
-                description: 'The light entity ID (e.g., light.living_room)',
+                description: 'Light entity ID (e.g., light.living_room)',
               },
               state: {
                 type: 'string',
-                description: 'Turn the light on or off',
+                description: 'on or off',
                 enum: ['on', 'off'],
               },
               brightness: {
                 type: 'number',
-                description: 'Brightness level (0-255)',
+                description: 'Brightness (0-255)',
                 minimum: 0,
                 maximum: 255,
               },
               rgb_color: {
                 type: 'array',
-                description: 'RGB color as [red, green, blue] (0-255 each)',
+                description: 'RGB color [red, green, blue] (0-255 each)',
                 items: {
                   type: 'number',
                   minimum: 0,
@@ -421,7 +390,7 @@ class HomeAssistantServer {
               },
               color_temp: {
                 type: 'number',
-                description: 'Color temperature in mireds (153-500)',
+                description: 'Color temperature in mireds (153-500, lower=cooler/bluer, higher=warmer/redder)',
                 minimum: 153,
                 maximum: 500,
               },
@@ -430,221 +399,8 @@ class HomeAssistantServer {
           },
         },
         {
-          name: 'send_remote_command',
-          description: 'Send remote control commands to remote entities (TV, Android TV, etc.)',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              entity_id: {
-                type: 'string',
-                description: 'The remote entity ID (e.g., remote.tv)',
-              },
-              command: {
-                type: 'string',
-                description: 'Remote command to send. Navigation: DPAD_UP/DOWN/LEFT/RIGHT/CENTER, BUTTON_A/B/X/Y, BACK. Volume: VOLUME_UP/DOWN/MUTE. Media: MEDIA_PLAY_PAUSE/PLAY/PAUSE/NEXT/PREVIOUS/STOP/RECORD/REWIND/FAST_FORWARD. Numbers: 0-9. TV: CHANNEL_UP/DOWN, TV, PROG_RED/GREEN/YELLOW/BLUE. Function keys: F1-F12. Other: HOME, MENU, INFO, GUIDE, SETTINGS, SEARCH, POWER, etc.',
-              },
-            },
-            required: ['entity_id', 'command'],
-          },
-        },
-        {
-          name: 'launch_app',
-          description: 'Launch an app/activity on a remote device (Android TV, etc.)',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              entity_id: {
-                type: 'string',
-                description: 'The remote entity ID (e.g., remote.tv)',
-              },
-              activity: {
-                type: 'string',
-                description: 'The app package name/activity to launch (e.g., com.plexapp.android)',
-              },
-            },
-            required: ['entity_id', 'activity'],
-          },
-        },
-        {
-          name: 'open_streaming_app',
-          description: 'Quick launcher for popular streaming apps on TV',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              entity_id: {
-                type: 'string',
-                description: 'The remote entity ID (e.g., remote.tv)',
-              },
-              app: {
-                type: 'string',
-                description: 'The streaming app to open',
-                enum: ['plex', 'youtube', 'netflix', 'prime', 'disney'],
-              },
-            },
-            required: ['entity_id', 'app'],
-          },
-        },
-        {
-          name: 'activate_scene',
-          description: 'Activate a Home Assistant scene',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              scene_id: {
-                type: 'string',
-                description: 'The scene ID to activate (e.g., scene.movie_time)',
-              },
-            },
-            required: ['scene_id'],
-          },
-        },
-        {
-          name: 'list_scenes',
-          description: 'List all available scenes in Home Assistant',
-          inputSchema: {
-            type: 'object',
-            properties: {},
-          },
-        },
-        {
-          name: 'control_media_player',
-          description: 'Control media players with play, pause, volume, and more',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              entity_id: {
-                type: 'string',
-                description: 'The media player entity ID (e.g., media_player.living_room)',
-              },
-              action: {
-                type: 'string',
-                description: 'Action to perform',
-                enum: ['play', 'pause', 'stop', 'next', 'previous', 'volume_set', 'volume_up', 'volume_down', 'mute', 'unmute', 'toggle'],
-              },
-              volume_level: {
-                type: 'number',
-                description: 'Volume level (0.0 to 1.0) for volume_set action',
-                minimum: 0,
-                maximum: 1,
-              },
-              media_content_id: {
-                type: 'string',
-                description: 'Media content ID to play',
-              },
-              media_content_type: {
-                type: 'string',
-                description: 'Media content type (music, playlist, video, episode, channel)',
-              },
-            },
-            required: ['entity_id', 'action'],
-          },
-        },
-        {
-          name: 'get_media_player_state',
-          description: 'Get detailed state of a media player',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              entity_id: {
-                type: 'string',
-                description: 'The media player entity ID',
-              },
-            },
-            required: ['entity_id'],
-          },
-        },
-        {
-          name: 'send_notification',
-          description: 'Send notifications through Home Assistant notify services',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              service: {
-                type: 'string',
-                description: 'Notify service name (e.g., notify, mobile_app_phone, alexa_media)',
-                default: 'notify',
-              },
-              title: {
-                type: 'string',
-                description: 'Notification title',
-              },
-              message: {
-                type: 'string',
-                description: 'Notification message (required)',
-              },
-              target: {
-                type: 'string',
-                description: 'Target device or entity ID (for specific notify services)',
-              },
-              data: {
-                type: 'object',
-                description: 'Additional data for the notification (e.g., actions, image, sound)',
-              },
-            },
-            required: ['message'],
-          },
-        },
-        {
-          name: 'list_notify_services',
-          description: 'List all available notification services',
-          inputSchema: {
-            type: 'object',
-            properties: {},
-          },
-        },
-        {
-          name: 'get_sensor_data',
-          description: 'Get current sensor data or historical data',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              entity_id: {
-                type: 'string',
-                description: 'The sensor entity ID (e.g., sensor.temperature)',
-              },
-              include_history: {
-                type: 'boolean',
-                description: 'Include historical data',
-                default: false,
-              },
-              start_time: {
-                type: 'string',
-                description: 'Start time for history (ISO format, e.g., 2025-01-01T00:00:00Z)',
-              },
-              end_time: {
-                type: 'string',
-                description: 'End time for history (ISO format, defaults to now)',
-              },
-              minimal_response: {
-                type: 'boolean',
-                description: 'Return minimal response with just state values',
-                default: false,
-              },
-            },
-            required: ['entity_id'],
-          },
-        },
-        {
-          name: 'list_sensors',
-          description: 'List all sensor entities with their current values',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              domain: {
-                type: 'string',
-                description: 'Filter by domain (sensor, binary_sensor)',
-                enum: ['sensor', 'binary_sensor'],
-              },
-              device_class: {
-                type: 'string',
-                description: 'Filter by device class (temperature, humidity, etc.)',
-              },
-            },
-          },
-        },
-        {
           name: 'call_service',
-          description: 'Call any Home Assistant service directly',
+          description: 'Universal Home Assistant service caller. Use this for any Home Assistant service including:\n\n• Automations: call_service("automation", "trigger", target={entity_id: "automation.morning_routine"})\n• Scripts: call_service("script", "turn_on", target={entity_id: "script.open_plex"})\n• Scenes: call_service("scene", "turn_on", target={entity_id: "scene.movie_time"})\n• Media Players: call_service("media_player", "media_play", target={entity_id: "media_player.living_room"})\n• Switches/Devices: call_service("homeassistant", "turn_on", target={entity_id: "switch.bedroom"})\n• Notifications: call_service("notify", "notify", service_data={message: "Hello", title: "Alert"})\n• Climate: call_service("climate", "set_temperature", service_data={temperature: 72}, target={entity_id: "climate.thermostat"})\n\nFor lights with color/brightness, use control_light instead - it handles complex RGB/brightness parameters more reliably.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -685,35 +441,35 @@ class HomeAssistantServer {
         },
         {
           name: 'list_services',
-          description: 'List all available Home Assistant services',
+          description: 'Discover available Home Assistant services by domain. Use this to find which services exist before calling call_service. Returns service names and their parameters.',
           inputSchema: {
             type: 'object',
             properties: {
               domain: {
                 type: 'string',
-                description: 'Filter by specific domain',
+                description: 'Filter by domain (e.g., light, automation, notify)',
               },
             },
           },
         },
         {
           name: 'render_template',
-          description: 'Render a Home Assistant template and return the result',
+          description: 'Render Jinja2 templates using Home Assistant\'s template engine. Access entity states, attributes, and perform calculations. Use for complex data queries and conditional logic.',
           inputSchema: {
             type: 'object',
             properties: {
               template: {
                 type: 'string',
-                description: 'The Jinja2 template to render (e.g., "{{ states.sensor.temperature.state }}°C")',
+                description: 'Jinja2 template (e.g., "{{ states.sensor.temperature.state }}°C")',
               },
               variables: {
                 type: 'object',
-                description: 'Variables to make available in the template context',
+                description: 'Template variables',
                 default: {},
               },
               timeout: {
                 type: 'number',
-                description: 'Template rendering timeout in seconds',
+                description: 'Timeout in seconds (1-30, default: 5)',
                 default: 5,
                 minimum: 1,
                 maximum: 30,
@@ -723,121 +479,27 @@ class HomeAssistantServer {
           },
         },
         {
-          name: 'get_events',
-          description: 'Get recent Home Assistant events from the event bus',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              event_type: {
-                type: 'string',
-                description: 'Filter by specific event type (e.g., state_changed, call_service)',
-              },
-              limit: {
-                type: 'number',
-                description: 'Maximum number of events to return',
-                default: 50,
-                minimum: 1,
-                maximum: 500,
-              },
-              entity_id: {
-                type: 'string',
-                description: 'Filter events related to specific entity',
-              },
-            },
-          },
-        },
-        {
-          name: 'fire_event',
-          description: 'Fire a custom event on the Home Assistant event bus',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              event_type: {
-                type: 'string',
-                description: 'Event type name',
-              },
-              event_data: {
-                type: 'object',
-                description: 'Event data payload',
-                default: {},
-              },
-            },
-            required: ['event_type'],
-          },
-        },
-        {
-          name: 'backup_management',
-          description: 'Manage Home Assistant backups',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              action: {
-                type: 'string',
-                description: 'Backup action to perform',
-                enum: ['list', 'create', 'download_info', 'delete', 'restore_info'],
-              },
-              backup_id: {
-                type: 'string',
-                description: 'Backup ID for specific operations',
-              },
-              name: {
-                type: 'string',
-                description: 'Name for new backup',
-              },
-              password: {
-                type: 'string',
-                description: 'Password for backup encryption',
-              },
-              addons: {
-                type: 'array',
-                description: 'List of addon slugs to include in backup',
-                items: { type: 'string' },
-              },
-              folders: {
-                type: 'array',
-                description: 'List of folders to include in backup',
-                items: { type: 'string' },
-              },
-            },
-            required: ['action'],
-          },
-        },
-        {
-          name: 'system_info',
-          description: 'Get Home Assistant system information and health status',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              include_addons: {
-                type: 'boolean',
-                description: 'Include addon information',
-                default: false,
-              },
-            },
-          },
-        },
-        {
           name: 'manage_todo_lists',
-          description: 'Manage Home Assistant to-do lists',
+          description: 'Manage Home Assistant custom to-do lists. Supports listing todos, getting/adding/updating/removing items, and creating new lists. Handles complex todo operations with due dates and status tracking.',
           inputSchema: {
             type: 'object',
             properties: {
               action: {
                 type: 'string',
-                description: 'Action to perform on to-do lists',
+                description: 'Action: list/get_items/add_item/update_item/remove_item/create_list_info/create_list_ws',
                 enum: ['list', 'get_items', 'add_item', 'update_item', 'remove_item', 'create_list_info', 'create_list_ws'],
               },
               entity_id: {
                 type: 'string',
-                description: 'To-do list entity ID (e.g., todo.shopping_list)',
+                description: 'Todo list entity ID (e.g., todo.my_tasks)',
               },
               item_id: {
                 type: 'string',
-                description: 'Item ID for update/remove operations',
+                description: 'Item ID for update/remove',
               },
               item: {
                 type: 'string',
-                description: 'Item text for add/update operations',
+                description: 'Item text for add/update',
               },
               summary: {
                 type: 'string',
@@ -849,16 +511,16 @@ class HomeAssistantServer {
               },
               status: {
                 type: 'string',
-                description: 'Item status for updates',
+                description: 'Item status: needs_action/completed',
                 enum: ['needs_action', 'completed'],
               },
               due_date: {
                 type: 'string',
-                description: 'Due date in ISO format (YYYY-MM-DD)',
+                description: 'Due date (YYYY-MM-DD)',
               },
               list_name: {
                 type: 'string',
-                description: 'Name for new to-do list (for create_list_info or create_list_ws actions)',
+                description: 'Name for new list (create actions)',
               },
             },
             required: ['action'],
@@ -866,30 +528,30 @@ class HomeAssistantServer {
         },
         {
           name: 'manage_shopping_list',
-          description: 'Manage the Home Assistant shopping list',
+          description: 'Manage the default Home Assistant shopping list (todo.shopping_list). Supports get/add/update/remove/clear operations. Handles item completion status.',
           inputSchema: {
             type: 'object',
             properties: {
               action: {
                 type: 'string',
-                description: 'Shopping list action',
+                description: 'Action: get/add/update/remove/clear',
                 enum: ['get', 'add', 'update', 'remove', 'clear'],
               },
               item: {
                 type: 'string',
-                description: 'Item name for add/update/remove operations. For update/remove, this can be used to find the item if item_id is not provided.',
+                description: 'Item name',
               },
               complete: {
                 type: 'boolean',
-                description: 'Mark item as complete/incomplete',
+                description: 'Mark complete (true) or incomplete (false)',
               },
               item_id: {
                 type: 'string',
-                description: 'Item ID for update/remove operations (preferred). If not provided, the system will search by item name.',
+                description: 'Item ID (preferred for update/remove)',
               },
               id: {
                 type: 'string',
-                description: 'Alternative item ID parameter for update/remove operations',
+                description: 'Alternative item ID',
               },
             },
             required: ['action'],
@@ -919,52 +581,16 @@ class HomeAssistantServer {
         switch (request.params.name) {
           case 'get_state':
             return await this.getEntityState(request.params.arguments || {});
-          case 'toggle_entity':
-            return await this.toggleEntity(request.params.arguments || {});
-          case 'trigger_automation':
-            return await this.triggerAutomation(request.params.arguments || {});
-          case 'run_script':
-            return await this.runScript(request.params.arguments || {});
           case 'list_entities':
             return await this.listEntities(request.params.arguments || {});
           case 'control_light':
             return await this.controlLight(request.params.arguments || {});
-          case 'send_remote_command':
-            return await this.sendRemoteCommand(request.params.arguments || {});
-          case 'launch_app':
-            return await this.launchApp(request.params.arguments || {});
-          case 'open_streaming_app':
-            return await this.openStreamingApp(request.params.arguments || {});
-          case 'activate_scene':
-            return await this.activateScene(request.params.arguments || {});
-          case 'list_scenes':
-            return await this.listScenes(request.params.arguments || {});
-          case 'control_media_player':
-            return await this.controlMediaPlayer(request.params.arguments || {});
-          case 'get_media_player_state':
-            return await this.getMediaPlayerState(request.params.arguments || {});
-          case 'send_notification':
-            return await this.sendNotification(request.params.arguments || {});
-          case 'list_notify_services':
-            return await this.listNotifyServices(request.params.arguments || {});
-          case 'get_sensor_data':
-            return await this.getSensorData(request.params.arguments || {});
-          case 'list_sensors':
-            return await this.listSensors(request.params.arguments || {});
           case 'call_service':
             return await this.callService(request.params.arguments || {});
           case 'list_services':
             return await this.listServices(request.params.arguments || {});
           case 'render_template':
             return await this.renderTemplate(request.params.arguments || {});
-          case 'get_events':
-            return await this.getEvents(request.params.arguments || {});
-          case 'fire_event':
-            return await this.fireEvent(request.params.arguments || {});
-          case 'backup_management':
-            return await this.backupManagement(request.params.arguments || {});
-          case 'system_info':
-            return await this.getSystemInfo(request.params.arguments || {});
           case 'manage_todo_lists':
             return await this.manageTodoLists(request.params.arguments || {});
           case 'manage_shopping_list':
